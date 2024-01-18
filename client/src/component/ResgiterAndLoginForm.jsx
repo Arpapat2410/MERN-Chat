@@ -19,7 +19,8 @@ const RegisterAndLoginForm = () => {
 
     return (
         <div className=' h-screen flex items-center'>
-            <form onSubmit={handleSubmit} className='w-64 mx-auto mb-12'>
+            <form onSubmit={handleSubmit} className='w-64 mx-auto mb-12  '>
+                <div className='text-center text-4xl mb-5'>MERNCHAT </div>
                 <input
                     type='text'
                     value={username}
@@ -29,7 +30,7 @@ const RegisterAndLoginForm = () => {
                 />
 
                 <input
-                    type='text'
+                    type='password'
                     value={password}
                     className='block w-full rounded-lg p-2 border mt-5'
                     placeholder='Password'

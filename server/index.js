@@ -9,8 +9,11 @@ const cookieParser = require('cookie-parser');
 require("dotenv").config();
 // Create Express app
 const app = express();
+const ws = require("ws")
+const fs = require("fs")
 
 const User = require("./models/User")
+const Message = require("./models/Message")
 
 // Connect Database
 const MONGODB_URI = process.env.MONGODB_URI;
@@ -102,6 +105,83 @@ app.get("/profile", (req, res) => {
 
 // Start the server
 const PORT = process.env.PORT;
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
     console.log("Server is running on http://localhost:" + PORT);
+})
+//web Socket Server
+const wss = new ws.WebSocketServer({server})
+wss.on('connection',(connect,req)=> {
+    const notifyAboutOnlinePeople = () => {
+        [...wss.clients].forEach((client) => {
+            client.send(JSON.stringify({
+                online: [...wss.clients]
+            }))
+        })
+    }
+    connection.isAlive = true;
+
+    connection.timer = setInterval(()=>{
+        connection.ping();
+        mongoose.connection.deadTimer = setTimeout(()=>{
+            mongoose.connections.isAlive = false;
+            clearInterval(connection.timer);
+            connect.terminate();
+            notifyAboutOnlinePeople();
+            console.log("dead");
+        },1000)
+    },5000)
+    connection.on('pong', ()=>{
+        clearTimeout(mongoose.connection.deadtimer)
+    })
+
+    const cookies = req.headers.cookie;
+    if(cookies) {
+        const tokenCookieString = cookies.split(';').find((str) => str.startsWith("token="));
+        if(tokenCookieString){
+            const token = tokenCookieString.split("=")[1];
+            if(token) {
+                jwt.verify(token, secret, {} , (err,userData)=>{
+                    if(err) throw err;
+                    const {userId,username} = userData;
+                    connection.userId = userId;
+                    connection.username = username;
+
+                })
+            }
+        }
+    }
+    connection.on("message",async(message)=>{
+        const messageData = JSON.parse(message.toString());
+        const {recipient, sender , text , file } = messageData;
+        let filename = null;
+        if (file) {
+            const parts = file.name.split('.')
+            const ext = parts[parts.length - 1 ];
+            filename = Data.now() + "." + ext;
+            const path = __dirname + "/uploads/" + filename;
+            const bufferData = new Buffer(file.data.split(",")[1],"base64");
+            fs.writeFile(path, bufferData, ()=>{
+                console.log('file server : '+ path);
+            })
+        }
+        if(recipient && (text || file )){
+            const messageDoc = await Message.create({
+                sender : connection.userId,
+                recipient,
+                text,
+                file:file ? filename : null,
+            });
+            [...wss.clients].filter(c=>c.userId === recipient ).forEach(c=>c.send(JSON.stringify({
+                text,
+                file:file ? filename : null,
+                sender : mongoose.connection.userId,
+                recipient,
+                _id: messageData._id,
+            })))
+        }
+        
+    })
+
+
+    notifyAboutOnlinePeople();
 })
