@@ -4,13 +4,10 @@ const NavBar = () => {
     return (
         
    <div className='bg-neutral text-neutral-content'>
-
-   
-        <div className="navbar max-w-7xl mx-auto ">
+        <div className="navbar mx-auto ">
         <div className="flex-1">
             <a className="btn btn-ghost text-xl text-white" >MERN CHAT</a>
         </div>
-        
         <div className="flex-none">
             <div className="dropdown dropdown-end mr-2">
                 <button className='btn btn-ghost text-xl text-white' >Home</button>
@@ -29,7 +26,6 @@ const NavBar = () => {
                             <span className="badge">New</span>
                         </a>
                     </li>
-                    <li><a>Settings</a></li>
                     <li><a>Logout</a></li>
                 </ul>
             </div>

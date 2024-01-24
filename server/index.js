@@ -39,6 +39,7 @@ app.use(cookieParser());
 // Set static (public) folder
 app.use('/uploads', express.static(__dirname + '/uploads'));
 
+
 app.get("/", (req, res) => {
     res.send("<h1>This is a RESTful API for MREN CHAT</h1>");
 });
@@ -66,19 +67,17 @@ app.post("/register", async (req, res) => {
 const secret = process.env.SECRET
 app.post("/login", async (req, res) => {
     //เป็นการ Destructuring Object
-    const {username,password} = req.body;
-    const userDoc = await User.findOne({username })
+    const { username, password } = req.body;
+    const userDoc = await User.findOne({ username });
     if (userDoc) {
         const isMatchedPassword = bcrypt.compareSync(password, userDoc.password);
         if (isMatchedPassword) {
             //logged in
-            jwt.sign({
-                username,
-                id: userDoc._id
-            }, secret, {}, (err, token) => {
+            jwt.sign({ username, userId: userDoc._id }, secret, {}, (err, token) => {
                 if (err) throw err;
+                //cookie อยู่ที่ res
                 res.cookie("token", token).json({
-                    id: userDoc._id,
+                    userId: userDoc._id,
                     username,
                     password,
                 })
@@ -87,7 +86,7 @@ app.post("/login", async (req, res) => {
             res.status(400).json("wrong credentials")
         }
     } else {
-        res.status(400).json("user not found")
+        res.status(404).json("user not found")
     }
 })
 
@@ -103,85 +102,105 @@ app.get("/profile", (req, res) => {
     }
 })
 
+//logout
+app.post("/logout", (req, res) => {
+    res.clearCookie("token","").json("ok");
+});
+
+//check user
+app.get("/people", async(req, res) => {
+    const users = await User.find({}, {'_id': 1 , username : 1})
+    res.json(users)
+
+})
+
 // Start the server
 const PORT = process.env.PORT;
 const server = app.listen(PORT, () => {
     console.log("Server is running on http://localhost:" + PORT);
 })
+
+
 //web Socket Server
-const wss = new ws.WebSocketServer({server})
-wss.on('connection',(connect,req)=> {
+//web socket server
+const wss = new ws.WebSocketServer({ server });
+
+wss.on('connection', (connection, req) => {
     const notifyAboutOnlinePeople = () => {
         [...wss.clients].forEach((client) => {
-            client.send(JSON.stringify({
-                online: [...wss.clients]
-            }))
-        })
-    }
+            client.send(
+                JSON.stringify({
+                    online: [...wss.clients].map((c) => ({
+                        userId: c.userId,
+                        username: c.username,
+                    })),
+                })
+            );
+        });
+    };
     connection.isAlive = true;
-
-    connection.timer = setInterval(()=>{
+    connection.timer = setInterval(() => {
         connection.ping();
-        mongoose.connection.deadTimer = setTimeout(()=>{
-            mongoose.connections.isAlive = false;
+        connection.deadTimer = setTimeout(() => {
+            connection.isAlive = false;
             clearInterval(connection.timer);
-            connect.terminate();
+            connection.terminate();
             notifyAboutOnlinePeople();
-            console.log("dead");
-        },1000)
-    },5000)
-    connection.on('pong', ()=>{
-        clearTimeout(mongoose.connection.deadtimer)
-    })
+            console.log('dead');
+        }, 1000);
+    }, 5000);
 
-    const cookies = req.headers.cookie;
-    if(cookies) {
-        const tokenCookieString = cookies.split(';').find((str) => str.startsWith("token="));
-        if(tokenCookieString){
-            const token = tokenCookieString.split("=")[1];
-            if(token) {
-                jwt.verify(token, secret, {} , (err,userData)=>{
-                    if(err) throw err;
-                    const {userId,username} = userData;
+    connection.on('pong', () => {
+        clearTimeout(connection.deadTimer);
+    });
+
+    //read username and id from the cookie for this connection
+    const cookie = req.headers.cookie;
+    if (cookie) {
+        const tokenCookieString = cookie.split(";").find(str => str.startsWith("token="))
+        if (tokenCookieString) {
+            const token = tokenCookieString.split("=")[1]
+            if (token) {
+                jwt.verify(token, secret, {}, (err, userData) => {
+                    if (err) throw err;
+                    const { userId, username } = userData;
                     connection.userId = userId;
                     connection.username = username;
-
-                })
+                });
             }
         }
     }
-    connection.on("message",async(message)=>{
-        const messageData = JSON.parse(message.toString());
-        const {recipient, sender , text , file } = messageData;
+
+    connection.on("message", async (message) => {
+        const messageDate = JSON.parse(message.toString())
+        const { recipient, sender, file } = messageDate;
         let filename = null;
         if (file) {
-            const parts = file.name.split('.')
-            const ext = parts[parts.length - 1 ];
-            filename = Data.now() + "." + ext;
+            const parts = file.name.split(".");
+            const ext = parts[parts.length - 1];
+            filename = Date.now() + "." + ext;
             const path = __dirname + "/uploads/" + filename;
-            const bufferData = new Buffer(file.data.split(",")[1],"base64");
-            fs.writeFile(path, bufferData, ()=>{
-                console.log('file server : '+ path);
+            const bufferData = new Buffer(file.data.split(".")[1], "base64")
+            fs.writeFile(path, bufferData, () => {
+                console.log("file save" + path);
             })
         }
-        if(recipient && (text || file )){
+        if (recipient && (text || file)) {
+            //save to database
             const messageDoc = await Message.create({
-                sender : connection.userId,
+                sender: connection.userId,
                 recipient,
                 text,
-                file:file ? filename : null,
+                file: file ? filename : null
             });
-            [...wss.clients].filter(c=>c.userId === recipient ).forEach(c=>c.send(JSON.stringify({
-                text,
-                file:file ? filename : null,
-                sender : mongoose.connection.userId,
+            [...wss.clients].filter(c => c.userId === recipient).forEach(c => c.send(JSON.stringify({
+                sender: connection.userId,
                 recipient,
-                _id: messageData._id,
+                text,
+                file: file ? filename : null,
+                _id: messageDate._id
             })))
         }
-        
     })
-
-
     notifyAboutOnlinePeople();
-})
+});

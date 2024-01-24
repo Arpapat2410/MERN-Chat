@@ -5,6 +5,7 @@ import Routes from "./Routes";
 import { useState } from "react";
 
 function App() {
+  //set axios url 
   axios.defaults.baseURL = "http://localhost:4000"; // Corrected property name
   axios.defaults.withCredentials = true;
 
